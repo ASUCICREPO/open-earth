@@ -1,0 +1,308 @@
+/* OpenEarthDatePicker.css */
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap');
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Poppins', sans-serif;
+  overflow-x: hidden;
+}
+
+.openearth-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background-color: #020b18;
+}
+
+/* Header Styles */
+.openearth-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 4rem;
+  background-color: #020b18;
+  color: white;
+  position: relative;
+  z-index: 10;
+  height: 12vh; /* This sets the height to 20% of the viewport height */
+  box-sizing: border-box;
+}
+
+.openearth-logo-container {
+  display: flex;
+  align-items: center;
+}
+
+.openearth-logo {
+  height: 36px;
+  width: auto;
+}
+
+.openearth-title {
+  margin-left: 10px;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: white;
+}
+
+.openearth-nav {
+  display: flex;
+  align-items: center;
+}
+
+.openearth-nav ul {
+  display: flex;
+  list-style: none;
+  margin-right: 4rem;
+}
+
+.openearth-nav ul li {
+  margin-left: 4rem;
+}
+
+.openearth-nav ul li a {
+  color: rgba(255, 255, 255, 1);
+  text-decoration: none;
+  font-size: 16px;
+  font-style: Medium;
+  font-family: Poppins;
+  font-weight: 500;
+  line-height: normal;
+  transition: opacity 0.3s;
+}
+
+.openearth-nav ul li a:hover {
+  opacity: 0.8;
+}
+
+.language-selector {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  padding: 0.5rem;
+  border-radius: 4px;
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.flag-icon {
+  margin-right: 8px;
+}
+
+.dropdown-arrow {
+  margin-left: 8px;
+  font-size: 0.7rem;
+}
+
+/* Main Content Styles */
+.openearth-main {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 1) 0%, rgba(186, 221, 240, 1) 90%);
+  overflow: hidden;
+}
+
+/* Earth Circle Styles */
+.earth-circle {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 100vw;
+  height: 100vw;
+  background-image: url('/external/earth.jpg');
+  background-size: cover;
+  background-position: center;
+  border-radius: 50%;
+  z-index: 1;
+  transform: translateX(-50%) translateY(-50%);
+  transform-origin: center center;
+  /* No default animation */
+}
+
+/* Add the rotating class that will be applied on button click */
+.earth-circle.rotating {
+  animation: rotate-earth 100s linear infinite;
+}
+
+@keyframes rotate-earth {
+  0% {
+    transform: translateX(-50%) translateY(-50%) rotate(0deg);
+  }
+  100% {
+    transform: translateX(-50%) translateY(-50%) rotate(360deg);
+  }
+}
+
+.date-picker-container {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  max-width: 400px;
+  padding: 2rem;
+}
+
+.date-picker-card {
+  background-color: rgba(255, 255, 255, 0.85);
+  border-radius: 8px;
+  padding: 2rem;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+}
+
+.upload-icon {
+  margin-bottom: 1.5rem;
+}
+
+.date-instruction {
+  font-size: 1rem;
+  margin-bottom: 1.5rem;
+  color: #333;
+  text-align: center;
+}
+
+.date-input-wrapper {
+  position: relative;
+  width: 100%;
+  margin-bottom: 1.5rem;
+}
+
+.date-input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 1px solid #8a8fb9;
+  border-radius: 4px;
+  font-size: 1rem;
+  color: #333;
+  background-color: rgba(255, 255, 255, 0.7);
+  text-align: center;
+  cursor: pointer;
+}
+
+.date-input:focus {
+  outline: none;
+  border-color: #4a5db7;
+}
+
+.date-picker-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 8px;
+  z-index: 100;
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  overflow: hidden;
+}
+
+/* Override react-datepicker styles */
+.react-datepicker {
+  font-family: 'Poppins', sans-serif !important;
+  border: none !important;
+  box-shadow: none !important;
+  width: 100% !important;
+}
+
+.react-datepicker__month-container {
+  width: 100% !important;
+}
+
+.react-datepicker__header {
+  background-color: #f8f9fa !important;
+  border-bottom: 1px solid #e9ecef !important;
+}
+
+.react-datepicker__day--selected {
+  background-color: #1e3a8a !important;
+}
+
+.react-datepicker__day:hover {
+  background-color: #e9ecef !important;
+}
+
+.ok-button {
+  padding: 0.75rem 3rem;
+  background-color: #1e3a8a;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.3s;
+  width: 100%;
+}
+
+.ok-button:hover:not(:disabled) {
+  background-color: #1e40af;
+}
+
+.ok-button:disabled {
+  background-color: #9ca3af;
+  cursor: not-allowed;
+}
+
+/* Responsive Styles */
+@media screen and (max-width: 768px) {
+  .openearth-header {
+    padding: 1rem;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .openearth-nav {
+    width: 100%;
+    margin-top: 1rem;
+    justify-content: space-between;
+  }
+  
+  .openearth-nav ul {
+    margin-right: 0;
+  }
+  
+  .openearth-nav ul li {
+    margin-left: 0;
+    margin-right: 1.5rem;
+  }
+  
+  .date-picker-container {
+    padding: 1rem;
+  }
+  
+  .date-picker-card {
+    padding: 1.5rem;
+  }
+}
+
+@media screen and (max-width: 480px) {
+  .openearth-nav ul li {
+    margin-right: 1rem;
+  }
+  
+  .openearth-nav ul li a {
+    font-size: 0.9rem;
+  }
+  
+  .date-instruction {
+    font-size: 0.9rem;
+  }
+  
+  .ok-button {
+    padding: 0.75rem 2rem;
+  }
+}

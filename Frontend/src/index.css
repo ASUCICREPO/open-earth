@@ -1,0 +1,301 @@
+/* index.css */
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap');
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Poppins', sans-serif;
+  overflow-x: hidden;
+}
+
+.openearth-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background-color: #020b18;
+}
+
+/* Header Styles */
+.openearth-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 4rem;
+  background-color: #020b18;
+  color: white;
+  position: relative;
+  z-index: 10;
+  height: 12vh; /* This sets the height to 12% of the viewport height */
+  box-sizing: border-box;
+}
+
+.openearth-logo-container {
+  display: flex;
+  align-items: center;
+}
+
+.openearth-logo {
+  height: 40px;
+  width: auto;
+}
+
+.openearth-title {
+  margin-left: 10px;
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.openearth-nav {
+  display: flex;
+  align-items: center;
+}
+
+.openearth-nav ul {
+  display: flex;
+  list-style: none;
+  margin-right: 2rem;
+}
+
+.openearth-nav ul li {
+  margin-left: 2rem;
+}
+
+.openearth-nav ul li a {
+  color: white;
+  text-decoration: none;
+  font-size: 1rem;
+  transition: opacity 0.3s;
+}
+
+.openearth-nav ul li a:hover {
+  opacity: 0.8;
+}
+
+.language-selector {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  padding: 0.5rem;
+  border-radius: 4px;
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.flag-icon {
+  margin-right: 8px;
+}
+
+.dropdown-arrow {
+  margin-left: 8px;
+  font-size: 0.7rem;
+}
+
+/* Main Content Styles */
+.openearth-main {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 1) 0%, rgba(186, 221, 240, 1) 90%);
+  overflow: hidden;
+}
+
+/* Earth Semicircle Styles */
+.earth-semicircle {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 100vw;
+  height: 100vw;
+  background-image: url('/external/earth.jpg');
+  background-size: cover;
+  background-position: center;
+  border-radius: 50%;
+  z-index: 1;
+  transform: translateX(-50%) translateY(-50%);
+  transform-origin: center center;
+  
+  /* No default animation */
+}
+
+.earth-semicircle.rotating {
+  animation: rotate-earth 100s linear infinite;
+}
+
+@keyframes rotate-earth {
+  0% {
+    transform: translateX(-50%) translateY(-50%) rotate(0deg);
+  }
+  100% {
+    transform: translateX(-50%) translateY(-50%) rotate(360deg);
+  }
+}
+
+.drop-container {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  max-width: 500px;
+  padding: 2rem;
+}
+
+.dropzone-card {
+  background-color: rgba(255, 255, 255, 0.85);
+  border-radius: 8px;
+  padding: 2rem;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+}
+
+.dropzone-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 25px rgba(0, 0, 0, 0.15);
+}
+
+.upload-icon {
+  margin-bottom: 1.5rem;
+}
+
+.dropzone-content {
+  text-align: center;
+}
+
+.dropzone-text {
+  font-size: 1.1rem;
+  margin-bottom: 0.5rem;
+  color: #333;
+}
+
+.browse-link {
+  color: #1a56db;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.supported-formats {
+  font-size: 0.9rem;
+  color: #666;
+}
+
+.upload-button {
+  margin-top: 1.5rem;
+  padding: 0.75rem 3rem;
+  background-color: #1e3a8a;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.upload-button:hover {
+  background-color: #1e40af;
+}
+
+/* Responsive Styles */
+@media screen and (max-width: 768px) {
+  .openearth-header {
+    padding: 1rem;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .openearth-nav {
+    width: 100%;
+    margin-top: 1rem;
+    justify-content: space-between;
+  }
+  
+  .openearth-nav ul {
+    margin-right: 0;
+  }
+  
+  .openearth-nav ul li {
+    margin-left: 0;
+    margin-right: 1.5rem;
+  }
+  
+  .drop-container {
+    padding: 1rem;
+  }
+  
+  .dropzone-card {
+    padding: 1.5rem;
+  }
+}
+
+@media screen and (max-width: 480px) {
+  .openearth-nav ul li {
+    margin-right: 1rem;
+  }
+  
+  .openearth-nav ul li a {
+    font-size: 0.9rem;
+  }
+  
+  .dropzone-text {
+    font-size: 1rem;
+  }
+  
+  .upload-button {
+    padding: 0.75rem 2rem;
+  }
+}
+
+
+/* **************Page not forund CSS ***************/
+.not-found-container1 {
+    width: 100%;
+    display: flex;
+    overflow: auto;
+    min-height: 100vh;
+    align-items: center;
+    flex-direction: column;
+    justify-content: center;
+  }
+   
+  .not-found-container2 {
+    display: flex;
+    position: relative;
+    align-items: center;
+    flex-direction: column;
+    justify-content: center;
+  }
+   
+  .not-found-text2 {
+    color: rgb(38, 38, 38);
+    font-size: 252px;
+    margin-top: -20px;
+    font-weight: 900;
+    margin-bottom: -20px;
+    letter-spacing: -20px;
+  }
+   
+  .not-found-container3 {
+    width: 421px;
+    display: flex;
+    align-items: center;
+    flex-direction: column;
+    justify-content: center;
+  }
+   
+  .not-found-text3 {
+    text-align: center;
+    font-weight: 400;
+  }
+  
