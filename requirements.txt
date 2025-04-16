@@ -1,0 +1,4 @@
+earthengine-api==0.1.350
+Pillow==10.0.0
+Shapely==2.0.1
+requests==2.31.0
