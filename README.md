@@ -135,6 +135,3 @@ The application is deployed using AWS CDK with the following key resources:
 **External Services:**
 - **Google Earth Engine**: Provides satellite imagery and geospatial datasets (Dynamic World, WDPA).
 
----
-
-This README provides a clear, structured guide for the Open Earth Foundation project, mirroring the format of the provided example while tailoring the content to the specifics of your project. Let me know if you’d like to add more details or adjust the structure!
