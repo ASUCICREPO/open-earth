@@ -12,10 +12,25 @@ from shapely import wkt
 from shapely.geometry import Polygon, MultiPolygon, box
 import math
 import concurrent.futures
+import uuid
 
 # Initialize S3 client
 s3 = boto3.client('s3')
-S3_BUCKET = os.environ.get('S3_BUCKET', 'open-earth-foundation')  # Get bucket name from environment variable
+
+# Get environment variables for configuration
+S3_BUCKET = os.environ.get('S3_BUCKET', 'open-earth-foundation')
+SERVICE_ACCOUNT = os.environ.get('SERVICE_ACCOUNT', 'open-earth@ee-ridhamsonani3.iam.gserviceaccount.com')
+EE_KEY_PATH = os.environ.get('EE_KEY_PATH', '/tmp/ee-key.json')
+DATA_PATH = os.environ.get('DATA_PATH', '/tmp/data.json')
+EE_KEY_S3_KEY = os.environ.get('EE_KEY_S3_KEY', 'ee-ridhamsonani3-access_key.json')
+DATA_S3_KEY = os.environ.get('DATA_S3_KEY', 'AVA_data.json')
+START_DATE = os.environ.get('DEFAULT_START_DATE', '2023-06-01')
+END_DATE = os.environ.get('DEFAULT_END_DATE', '2024-07-30')
+OUTPUT_PREFIX = os.environ.get('DEFAULT_OUTPUT_PREFIX', 'forest_classification')
+UPLOAD_EXPIRATION = int(os.environ.get('UPLOAD_EXPIRATION', '3600'))  # Default 1 hour
+DOWNLOAD_EXPIRATION = int(os.environ.get('DOWNLOAD_EXPIRATION', '86400'))  # Default 24 hours
+ALLOWED_ORIGINS = os.environ.get('ALLOWED_ORIGINS', '*').split(',')
+DEBUG = os.environ.get('DEBUG', 'false').lower() == 'true'
 
 # Global variables
 ENTIRE_EE_BOUNDARY = None
@@ -25,72 +40,255 @@ boundary_box = None
 
 def lambda_handler(event, context):
     try:
-        # Download required files from S3
-        # print("Starting natural forest classification Lambda function")
-        gee_service_account = os.environ.get('GEE_SERVICE_ACCOUNT')
-        gee_credentials_file = os.environ.get('GEE_CREDENTIALS_FILE')
-
-        if not gee_service_account or not gee_credentials_file:
-            raise ValueError("GEE_SERVICE_ACCOUNT and GEE_CREDENTIALS_FILE environment variables must be set")
+        # Add CORS headers for all responses
+        cors_headers = {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
+            'Access-Control-Allow-Methods': 'GET,POST,OPTIONS'
+        }
         
-        s3.download_file(S3_BUCKET, 'data.json', '/tmp/data.json')
-
-        local_credentials_path = '/tmp/ee-key.json'
-        s3.download_file(S3_BUCKET, gee_credentials_file, local_credentials_path)
+        # # Handle preflight OPTIONS request
+        # http_method = get_http_method(event)
+        # if http_method == 'OPTIONS':
+        #     return {
+        #         'statusCode': 200,
+        #         'headers': cors_headers,
+        #         'body': json.dumps({'message': 'CORS preflight request successful'})
+        #     }
         
-        # Get parameters from event or use defaults
-        start_date = event.get('start_date', '2024-06-01')
-        end_date = event.get('end_date', '2024-07-30')
-        output_prefix = event.get('output_prefix', 'forest_classification')
+        # Parse request body
+        request_body = parse_request_body(event)
         
-        # Initialize Earth Engine
-        credentials = ee.ServiceAccountCredentials(gee_service_account, local_credentials_path)
-        ee.Initialize(credentials)
-        print('Earth Engine initialized successfully')
+        # Get operation type from request
+        operation = request_body.get('operation', '').lower()
         
-        # Create output directory
-        output_dir = "/tmp/forest_classification"
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
-        
-        # Process the data
-        result = process_natural_forest_classification(
-            '/tmp/data.json', 
-            start_date, 
-            end_date, 
-            output_dir
-        )
-        
-        if not result:
+        if operation == 'upload':
+            # Generate pre-signed URL for file upload
+            filename = request_body.get('filename', f"user_data_{uuid.uuid4()}.json")
+            
+            # Ensure filename is sanitized and has .json extension
+            if not filename.endswith('.json'):
+                filename += '.json'
+            
+            filename = sanitize_filename(filename)
+            s3_key = f"uploads/{filename}"
+            
+            # Generate pre-signed URL for upload
+            presigned_url = generate_presigned_url(
+                'put_object',
+                {'Bucket': S3_BUCKET, 'Key': s3_key, 'ContentType': 'application/json'},
+                UPLOAD_EXPIRATION
+            )
+            
             return {
-                'status': 'error',
-                'message': 'Cloud cover is too much, please try another range'
+                'statusCode': 200,
+                'headers': cors_headers,
+                'body': json.dumps({
+                    'status': 'success',
+                    'upload_url': presigned_url,
+                    'filename': filename
+                })
+            }
+            
+        elif operation == 'analysis':
+            # Get parameters for analysis
+            start_date = request_body.get('start_date', START_DATE)
+            end_date = request_body.get('end_date', END_DATE)
+            output_prefix = request_body.get('output_prefix', OUTPUT_PREFIX)
+            filename = request_body.get('filename')
+            
+            if not filename:
+                return {
+                    'statusCode': 400,
+                    'headers': cors_headers,
+                    'body': json.dumps({
+                        'status': 'error',
+                        'message': 'Filename is required for analysis'
+                    })
+                }
+            
+            # Download required files from S3
+            s3.download_file(S3_BUCKET, EE_KEY_S3_KEY, EE_KEY_PATH)
+            
+            # Get user data file
+            user_data_key = f"uploads/{filename}"
+            s3.download_file(S3_BUCKET, user_data_key, DATA_PATH)
+            
+            # Initialize Earth Engine
+            credentials = ee.ServiceAccountCredentials(SERVICE_ACCOUNT, EE_KEY_PATH)
+            ee.Initialize(credentials)
+            print('Earth Engine initialized successfully')
+            
+            # Create output directory
+            output_dir = "/tmp/AVA_forest_classification"
+            if not os.path.exists(output_dir):
+                os.makedirs(output_dir)
+            
+            # Process the data
+            print(start_date, end_date, DATA_PATH)
+            result = process_natural_forest_classification(
+                DATA_PATH, 
+                start_date, 
+                end_date, 
+                output_dir
+            )
+            
+            if not result:
+                return {
+                    'statusCode': 400,
+                    'headers': cors_headers,
+                    'body': json.dumps({
+                        'status': 'error',
+                        'message': 'Cloud cover is too much, please try another date range'
+                    })
+                }
+            
+            image_file, stats_file, image_date = result
+            
+            # Upload results to S3
+            s3_image_key = f"{output_prefix}/natural_forest_classification_{image_date}.png"
+            s3_stats_key = f"{output_prefix}/natural_forest_stats_{image_date}.json"
+            
+            # s3.upload_file(image_file, S3_BUCKET, s3_image_key)
+            s3.upload_file(
+                image_file, 
+                S3_BUCKET, 
+                s3_image_key,
+                ExtraArgs={'ContentType': 'image/png'}
+            )
+            s3.upload_file(stats_file, S3_BUCKET, s3_stats_key)
+            
+            # Generate pre-signed URL for image download
+            image_download_url = generate_presigned_url(
+                'get_object',
+                {
+                    'Bucket': S3_BUCKET, 
+                    'Key': s3_image_key,
+                    'ResponseContentType': 'image/png',
+                    'ResponseContentDisposition': f'attachment; filename="natural_forest_classification_{image_date}.png"'
+                },
+                DOWNLOAD_EXPIRATION
+            )
+            
+            # Read stats file
+            with open(stats_file, 'r') as f:
+                stats_data = json.load(f)
+            
+            return {
+                'statusCode': 200,
+                'headers': cors_headers,
+                'body': json.dumps({
+                    'status': 'success',
+                    'image_download_url': image_download_url,
+                    'image_date': image_date,
+                    'analysis_results': stats_data
+                })
             }
         
-        image_file, stats_file, image_date = result
-        
-        # Upload results to S3
-        s3_image_key = f"{output_prefix}/natural_forest_classification_{image_date}.png"
-        s3_stats_key = f"{output_prefix}/natural_forest_stats_{image_date}.json"
-        
-        s3.upload_file(image_file, S3_BUCKET, s3_image_key)
-        s3.upload_file(stats_file, S3_BUCKET, s3_stats_key)
-        
-        return {
-            'status': 'success',
-            'image_url': f's3://{S3_BUCKET}/{s3_image_key}',
-            'stats_url': f's3://{S3_BUCKET}/{s3_stats_key}',
-            'image_date': image_date
-        }
-        
+        else:
+            # Unknown operation
+            return {
+                'statusCode': 400,
+                'headers': cors_headers,
+                'body': json.dumps({
+                    'status': 'error',
+                    'body': request_body,
+                    'message': f"Unknown operation: {operation}. Valid operations are 'upload' or 'analysis'."
+                })
+            }
+            
     except Exception as e:
         import traceback
-        traceback.print_exc()
+        error_trace = traceback.format_exc()
+        print(error_trace)
+        
+        # Add CORS headers to error response
+        cors_headers = {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
+            'Access-Control-Allow-Methods': 'GET,POST,OPTIONS'
+        }
+        
         return {
-            'status': 'error',
-            'message': str(e)
+            'statusCode': 500,
+            'headers': cors_headers,
+            'body': json.dumps({
+                'status': 'error',
+                'message': str(e),
+                'trace': error_trace if DEBUG else None
+            })
         }
 
+# def get_http_method(event):
+#     """Extract HTTP method from the event, handling different event formats"""
+#     # For Lambda Function URL
+#     if 'requestContext' in event and 'http' in event['requestContext']:
+#         return event['requestContext']['http']['method']
+    
+#     # For API Gateway REST API
+#     if 'httpMethod' in event:
+#         return event['httpMethod']
+    
+#     # For API Gateway HTTP API
+#     if 'requestContext' in event and 'http' not in event['requestContext']:
+#         if 'method' in event['requestContext']:
+#             return event['requestContext']['method']
+    
+#     return 'GET'  # Default to GET if not found
+
+def parse_request_body(event):
+    """Parse request body from the event, handling different event formats"""
+    if 'body' not in event:
+        return {}
+    
+    body = event['body']
+    if body is None:
+        return {}
+    
+    # Handle both string and parsed JSON
+    if isinstance(body, str):
+        try:
+            return json.loads(body)
+        except:
+            return {}
+    else:
+        return body
+
+# def get_origin_header(event):
+#     """Extract and validate the origin header from the request"""
+#     # Look for origin in headers (case-insensitive)
+#     headers = {k.lower(): v for k, v in (event.get('headers') or {}).items()}
+#     origin = headers.get('origin')
+    
+#     if origin and '*' not in ALLOWED_ORIGINS:
+#         if origin in ALLOWED_ORIGINS:
+#             return origin
+#         return ALLOWED_ORIGINS[0] if ALLOWED_ORIGINS else '*'
+    
+#     return '*'  # Default to all origins if no specific origins are set
+
+def sanitize_filename(filename):
+    """Sanitize the filename to prevent directory traversal and other issues"""
+    # Remove path components
+    filename = os.path.basename(filename)
+    # Replace potentially problematic characters
+    safe_chars = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
+    filename = ''.join(c if c in safe_chars else '_' for c in filename)
+    return filename
+
+def generate_presigned_url(operation, params, expiration=3600):
+    """Generate a pre-signed URL for S3 operations"""
+    try:
+        url = s3.generate_presigned_url(
+            ClientMethod=operation,
+            Params=params,
+            ExpiresIn=expiration
+        )
+        return url
+    except Exception as e:
+        print(f"Error generating presigned URL: {e}")
+        raise
+    
 def process_natural_forest_classification(json_path, start_date, end_date, output_dir):
     start_time = time.time()
     
@@ -113,9 +311,9 @@ def process_natural_forest_classification(json_path, start_date, end_date, outpu
     first_image = ee.Image(s2.first())
     cloud_cover = first_image.get('CLOUDY_PIXEL_PERCENTAGE').getInfo()
     print(f"Lowest cloud cover percentage: {cloud_cover}%")
-    if cloud_cover > 0.2:
-        print("Cloud cover is too much, please try another range")
-        return None
+    # if cloud_cover > 0.2:
+    #     print("Cloud cover is too much, please try another range")
+    #     return None
     image_date = ee.Date(first_image.get('system:time_start')).format('YYYY-MM-dd').getInfo()
     
     # Use more efficient filtering and processing for Dynamic World
@@ -543,9 +741,10 @@ def calculate_area_statistics(image, boundary, total_area, image_date, output_di
         json.dump(stats_data, f, indent=2)
     return stats_data, stats_file
 
-if __name__ == "__main__":
-    print(lambda_handler(event, None))
-
-
-
- 
+# if __name__ == "__main__":
+#     # For local testing
+#     event = {
+#         'start_date': '2025-04-01',
+#         'end_date': '2025-04-12'
+#     }
+#     print(lambda_handler(event, None))
