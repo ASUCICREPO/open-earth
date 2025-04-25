@@ -3,14 +3,17 @@ import { Construct } from 'constructs';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as iam from 'aws-cdk-lib/aws-iam';
-import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
-import * as path from 'path';
 
 export class ForestClassificationStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
-    // Define CloudFormation parameters
+    // Define CloudFormation parameters without default values
+    const assetsBucketNameParam = new cdk.CfnParameter(this, 'AssetsBucketName', {
+      type: 'String',
+      description: 'The name of the S3 bucket containing Lambda layers and function code.',
+    });
+
     const bucketNameParam = new cdk.CfnParameter(this, 'BucketName', {
       type: 'String',
       description: 'The name of the S3 bucket to store input/output files. Must be globally unique.',
@@ -23,13 +26,17 @@ export class ForestClassificationStack extends cdk.Stack {
 
     const geeCredentialsFileParam = new cdk.CfnParameter(this, 'GeeCredentialsFile', {
       type: 'String',
-      description: 'Name of the Google Earth Engine credentials file to upload to S3 (e.g., my-gee-credentials.json)',
+      description: 'Name of the Google Earth Engine credentials file in the S3 bucket (e.g., credentials/custom-gee-credentials.json)',
     });
 
     // Use parameter values
+    const assetsBucketName = assetsBucketNameParam.valueAsString;
     const bucketName = bucketNameParam.valueAsString;
     const geeServiceAccount = geeServiceAccountParam.valueAsString;
     const geeCredentialsFile = geeCredentialsFileParam.valueAsString;
+
+    // Reference the assets bucket
+    const assetsBucket = s3.Bucket.fromBucketName(this, 'AssetsBucket', assetsBucketName);
 
     // Create an S3 bucket for storing input/output files
     const bucket = new s3.Bucket(this, 'ForestClassificationBucket', {
@@ -38,31 +45,24 @@ export class ForestClassificationStack extends cdk.Stack {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
     });
 
-    // Upload gee-credentials.json to the S3 bucket
-    new s3deploy.BucketDeployment(this, 'UploadGeeCredentials', {
-      sources: [s3deploy.Source.asset('./credentials')],
-      destinationBucket: bucket,
-      destinationKeyPrefix: '',
-    });
-
-    // Create the Lambda function layers
+    // Create the Lambda function layers with fixed S3 keys
     const earthEngineLayer = new lambda.LayerVersion(this, 'EarthEngineLayer', {
-        code: lambda.Code.fromAsset(path.join(__dirname, '..','layers', 'earth_engine_layer.zip')),
-        compatibleRuntimes: [lambda.Runtime.PYTHON_3_9],
-        description: 'Earth Engine API and dependencies',
-      });
-  
-    const imageProcessingLayer = new lambda.LayerVersion(this, 'ImageProcessingLayer', {
-    code: lambda.Code.fromAsset(path.join(__dirname, '..','layers', 'image_processing.zip')),
-    compatibleRuntimes: [lambda.Runtime.PYTHON_3_9],
-    description: 'PIL, Shapely, and other image processing libraries',
+      code: lambda.Code.fromBucket(assetsBucket, 'layers/earth_engine_layer.zip'),
+      compatibleRuntimes: [lambda.Runtime.PYTHON_3_9],
+      description: 'Earth Engine API and dependencies',
     });
 
-    // Create the Lambda function using local assets
+    const imageProcessingLayer = new lambda.LayerVersion(this, 'ImageProcessingLayer', {
+      code: lambda.Code.fromBucket(assetsBucket, 'layers/image_processing.zip'),
+      compatibleRuntimes: [lambda.Runtime.PYTHON_3_9],
+      description: 'PIL, Shapely, and other image processing libraries',
+    });
+
+    // Create the Lambda function using code from S3 with fixed S3 key
     const forestClassificationLambda = new lambda.Function(this, 'ForestClassificationLambda', {
       runtime: lambda.Runtime.PYTHON_3_9,
       handler: 'lambda_function.lambda_handler',
-      code: lambda.Code.fromAsset('lambda'),
+      code: lambda.Code.fromBucket(assetsBucket, 'lambda-function-code.zip'),
       memorySize: 10240,
       timeout: cdk.Duration.seconds(900),
       environment: {
@@ -85,6 +85,9 @@ export class ForestClassificationStack extends cdk.Stack {
     // Grant the Lambda function permissions to read/write to the S3 bucket
     bucket.grantReadWrite(forestClassificationLambda);
 
+    // Grant the Lambda function permissions to read from the assets bucket
+    assetsBucket.grantRead(forestClassificationLambda);
+
     // Grant the Lambda function permissions to write logs
     forestClassificationLambda.addToRolePolicy(
       new iam.PolicyStatement({
@@ -101,12 +104,12 @@ export class ForestClassificationStack extends cdk.Stack {
 
     new cdk.CfnOutput(this, 'S3BucketName', {
       value: bucket.bucketName,
-      description: 'The name of the S3 bucket',
+      description: 'The name of the S3 bucket for input/output files',
     });
 
     new cdk.CfnOutput(this, 'UploadInstruction', {
-      value: `Gee-credentials.json has been uploaded to s3://${bucket.bucketName}/${geeCredentialsFile}`,
-      description: 'Confirmation of GEE credentials upload',
+      value: `Upload your data files to s3://${bucket.bucketName}/uploads/ and ensure the GEE credentials file is at s3://${bucket.bucketName}/${geeCredentialsFile}`,
+      description: 'Instructions for using the S3 bucket',
     });
   }
 }
