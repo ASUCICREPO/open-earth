@@ -111,7 +111,7 @@ def lambda_handler(event, context):
             print('Earth Engine initialized successfully')
             
             # Create output directory
-            output_dir = "/tmp/AVA_forest_classification"
+            output_dir = "/tmp/forest_classification"
             if not os.path.exists(output_dir):
                 os.makedirs(output_dir)
             
@@ -136,7 +136,6 @@ def lambda_handler(event, context):
             
             image_file, stats_file, image_date = result
             
-            # Calculate center of boundary box for file
 
             # Calculate center of boundary box for file naming
             minx, miny, maxx, maxy = boundary_box.bounds
@@ -312,7 +311,7 @@ def process_natural_forest_classification(json_path, start_date, end_date, outpu
 
 # Split the boundary box into smaller sub-rectangles
 def split_boundary_box(boundary_box, max_size_km=30):
-    minx, miny, maxx, maxy = [round(coord, 2) for coord in boundary_box.bounds]
+    minx, miny, maxx, maxy = boundary_box.bounds
 
     lat_mid = (miny + maxy) / 2
     km_per_deg_lon = 111 * math.cos(math.radians(lat_mid))
@@ -337,10 +336,10 @@ def split_boundary_box(boundary_box, max_size_km=30):
 
     for i in range(num_x):
         for j in range(num_y):
-            sub_minx = round(minx + i * step_x, 2)
-            sub_maxx = round(minx + (i + 1) * step_x, 2)
-            sub_miny = round(miny + j * step_y, 2)
-            sub_maxy = round(miny + (j + 1) * step_y, 2)
+            sub_minx = minx + i * step_x
+            sub_maxx = minx + (i + 1) * step_x
+            sub_miny = miny + j * step_y
+            sub_maxy = miny + (j + 1) * step_y
             sub_rect = box(sub_minx, sub_miny, sub_maxx, sub_maxy)
             if sub_rect.intersects(total_shapely_polygon):
                 sub_rectangles.append(sub_rect)
@@ -431,7 +430,7 @@ def merge_images_properly(results, output_dir, image_date):
         print("No valid sub-rectangle results to merge")
         return None
 
-    minx, miny, maxx, maxy = [round(coord, 2) for coord in boundary_box.bounds]
+    minx, miny, maxx, maxy = boundary_box.bounds
     lat_mid = (miny + maxy) / 2
     meters_per_deg_lon = 111000 * math.cos(math.radians(lat_mid))
     meters_per_deg_lat = 111000
@@ -463,7 +462,7 @@ def merge_images_properly(results, output_dir, image_date):
     for result in results:
         sub_img = result['png_image']
         sub_rect = result['shapely_sub_rect']
-        sub_minx, sub_miny, sub_maxx, sub_maxy = [round(coord, 2) for coord in sub_rect.bounds]
+        sub_minx, sub_miny, sub_maxx, sub_maxy = sub_rect.bounds
         x1, y1 = geo_to_pixel(sub_minx, sub_maxy)
         x2, y2 = geo_to_pixel(sub_maxx, sub_miny)
         sub_width = x2 - x1
@@ -525,11 +524,11 @@ def load_boundary(json_path):
 
     wkt_polygon = data['city_geometry']
     polygon = wkt.loads(wkt_polygon)
-
-    bbox_west = round(data['bbox_west'], 2)
-    bbox_south = round(data['bbox_south'], 2)
-    bbox_east = round(data['bbox_east'], 2)
-    bbox_north = round(data['bbox_north'], 2)
+    
+    bbox_west = data['bbox_west']
+    bbox_south = data['bbox_south']
+    bbox_east = data['bbox_east']
+    bbox_north = data['bbox_north']
     boundary_box = box(bbox_west, bbox_south, bbox_east, bbox_north)
 
     global CORRECT_AREA
@@ -572,4 +571,130 @@ def get_protected_areas(boundary_wkt, target_date_str):
         wdpa = ee.FeatureCollection('WCMC/WDPA/current/polygons')
 
     protected_areas = wdpa.filterBounds(boundary)
-    protected_mask = protected_areas
+    protected_mask = protected_areas.reduceToImage(
+        properties=['WDPAID'],
+        reducer=ee.Reducer.firstNonNull()
+    ).gt(0).rename('protected')
+    return protected_mask.clip(boundary)
+
+# Create the final image with the legend directly added using PIL
+def create_final_image_with_legend(map_img, output_file, image_date):
+    # Define legend data
+    colors = [
+        (65, 155, 223),   # Water
+        (57, 125, 73),    # Trees
+        (136, 176, 83),   # Grass
+        (122, 135, 198),  # Flooded Vegetation
+        (228, 150, 53),   # Crops
+        (223, 195, 90),   # Shrub & Scrub
+        (196, 40, 27),    # Built
+        (165, 155, 143),  # Bare
+        (179, 159, 225),  # Snow & Ice
+        (0, 0, 0),        # Cloud
+        (0, 64, 0)        # Natural Forest
+    ]
+    labels = [
+        'Water', 'Trees', 'Grass', 'Flooded Vegetation', 'Crops',
+        'Shrub & Scrub', 'Built', 'Bare', 'Snow & Ice', 'Cloud', 'Natural Forest'
+    ]
+
+    # Calculate dimensions
+    map_width, map_height = map_img.size
+    legend_width = 200  # Fixed width for the legend
+    legend_height = len(labels) * 50 + 20  # 30 pixels per label + padding
+    final_width = map_width + legend_width + 20  # 20 pixels padding
+    final_height = max(map_height, legend_height) + 60  # 60 pixels for title and padding
+
+    # Create the final image
+    final_img = Image.new('RGB', (final_width, final_height), (255, 255, 255))
+    final_img.paste(map_img, (10, 50))
+
+    # Draw the title
+    draw = ImageDraw.Draw(final_img)
+    title = f"Natural Forest Classification ({image_date})"
+    draw.text((10, 10), title, fill=(0, 0, 0))
+
+    # Draw the legend directly on the image
+    legend_x = map_width + 20
+    legend_y = 50
+    for i, (color, label) in enumerate(zip(colors, labels)):
+        # Draw color rectangle
+        rect_y = legend_y + i * 30
+        draw.rectangle(
+            [legend_x, rect_y, legend_x + 20, rect_y + 20],
+            fill=color
+        )
+        # Draw label text
+        draw.text(
+            (legend_x + 30, rect_y + 5),
+            label,
+            fill=(0, 0, 0)
+        )
+
+    # Save the final image
+    final_img.save(output_file)
+    return output_file
+
+# Calculate area statistics for the entire boundary with optimized reducer
+def calculate_area_statistics(image, boundary, total_area, image_date, output_dir):
+    CLASS_NAMES = [
+        'water', 'trees', 'grass', 'flooded_vegetation', 'crops',
+        'shrub_and_scrub', 'built', 'bare', 'snow_and_ice', 'cloud',
+        'natural_forest'
+    ]
+
+    # Use bestEffort for large areas and a higher scale for faster computation
+    histogram = image.reduceRegion(
+        reducer=ee.Reducer.frequencyHistogram(),
+        geometry=boundary,
+        scale=10,  # Match original code for better accuracy
+        maxPixels=1e13,
+        bestEffort=True,
+        tileScale=4
+    ).get('classification').getInfo() or {}
+
+    class_pixels = {}
+    total_pixels = 0
+
+    for class_value, pixel_count in histogram.items():
+        class_idx = int(class_value)
+        if class_idx < len(CLASS_NAMES):
+            class_pixels[CLASS_NAMES[class_idx]] = pixel_count
+            total_pixels += pixel_count
+
+    class_areas = {}
+    for class_name, pixels in class_pixels.items():
+        proportion = pixels / total_pixels if total_pixels > 0 else 0
+        class_areas[class_name] = round(proportion * total_area, 5)
+
+    for class_name in CLASS_NAMES:
+        if class_name not in class_areas:
+            class_areas[class_name] = 0.0
+
+    natural_forest_area = class_areas['natural_forest']
+    trees_area = class_areas['trees']
+    total_forest_area = natural_forest_area + trees_area
+
+    stats_data = {
+        "date": image_date,
+        "total_area_km2": round(total_area, 5),
+        "forest_area_km2": round(total_forest_area, 5),
+        "natural_forest_km2": round(natural_forest_area, 5),
+        "natural_forest_percentage": round((natural_forest_area / total_forest_area) * 100, 5) if total_forest_area > 0 else 0,
+        "other_trees_km2": round(trees_area, 5),
+        "other_trees_percentage": round((trees_area / total_forest_area) * 100, 5) if total_forest_area > 0 else 0,
+        "land_cover_classes": {}
+    }
+
+    for class_name, area_km2 in sorted(class_areas.items(), key=lambda item: item[1], reverse=True):
+        if area_km2 > 0:
+            percentage = (area_km2 / total_area) * 100 if total_area > 0 else 0
+            stats_data["land_cover_classes"][class_name] = {
+                "area_km2": round(area_km2, 5),
+                "percentage": round(percentage, 5)
+            }
+
+    stats_file = os.path.join(output_dir, f"natural_forest_stats_{image_date}.json")
+    with open(stats_file, 'w') as f:
+        json.dump(stats_data, f, indent=2)
+    return stats_data, stats_file
