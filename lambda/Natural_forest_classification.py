@@ -12,10 +12,25 @@ from shapely import wkt
 from shapely.geometry import Polygon, MultiPolygon, box
 import math
 import concurrent.futures
+import uuid
 
 # Initialize S3 client
 s3 = boto3.client('s3')
-S3_BUCKET = os.environ.get('S3_BUCKET', 'open-earth-foundation')  # Get bucket name from environment variable
+
+# Get environment variables (no default values)
+S3_BUCKET = os.environ['S3_BUCKET']
+SERVICE_ACCOUNT = os.environ['SERVICE_ACCOUNT']
+EE_KEY_PATH = os.environ['EE_KEY_PATH']
+DATA_PATH = os.environ['DATA_PATH']
+EE_KEY_S3_KEY = os.environ['EE_KEY_S3_KEY']
+DATA_S3_KEY = os.environ['DATA_S3_KEY']
+START_DATE = os.environ['START_DATE']
+END_DATE = os.environ['END_DATE']
+OUTPUT_PREFIX = os.environ['OUTPUT_PREFIX']
+UPLOAD_EXPIRATION = int(os.environ['UPLOAD_EXPIRATION'])
+DOWNLOAD_EXPIRATION = int(os.environ['DOWNLOAD_EXPIRATION'])
+ALLOWED_ORIGINS = os.environ['ALLOWED_ORIGINS'].split(',')
+DEBUG = os.environ['DEBUG'].lower() == 'true'
 
 # Global variables
 ENTIRE_EE_BOUNDARY = None
@@ -25,72 +40,216 @@ boundary_box = None
 
 def lambda_handler(event, context):
     try:
-        # Download required files from S3
-        # print("Starting natural forest classification Lambda function")
-        gee_service_account = os.environ.get('GEE_SERVICE_ACCOUNT')
-        gee_credentials_file = os.environ.get('GEE_CREDENTIALS_FILE')
-
-        if not gee_service_account or not gee_credentials_file:
-            raise ValueError("GEE_SERVICE_ACCOUNT and GEE_CREDENTIALS_FILE environment variables must be set")
+        # Add CORS headers for all responses
+        cors_headers = {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
+            'Access-Control-Allow-Methods': 'GET,POST,OPTIONS'
+        }
         
-        s3.download_file(S3_BUCKET, 'data.json', '/tmp/data.json')
-
-        local_credentials_path = '/tmp/ee-key.json'
-        s3.download_file(S3_BUCKET, gee_credentials_file, local_credentials_path)
+        # Parse request body
+        request_body = parse_request_body(event)
         
-        # Get parameters from event or use defaults
-        start_date = event.get('start_date', '2024-06-01')
-        end_date = event.get('end_date', '2024-07-30')
-        output_prefix = event.get('output_prefix', 'forest_classification')
+        # Get operation type from request
+        operation = request_body.get('operation', '').lower()
         
-        # Initialize Earth Engine
-        credentials = ee.ServiceAccountCredentials(gee_service_account, local_credentials_path)
-        ee.Initialize(credentials)
-        print('Earth Engine initialized successfully')
-        
-        # Create output directory
-        output_dir = "/tmp/forest_classification"
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
-        
-        # Process the data
-        result = process_natural_forest_classification(
-            '/tmp/data.json', 
-            start_date, 
-            end_date, 
-            output_dir
-        )
-        
-        if not result:
+        if operation == 'upload':
+            # Generate pre-signed URL for file upload
+            filename = request_body.get('filename', f"user_data_{uuid.uuid4()}.json")
+            
+            # Ensure filename is sanitized and has .json extension
+            if not filename.endswith('.json'):
+                filename += '.json'
+            
+            filename = sanitize_filename(filename)
+            s3_key = f"uploads/{filename}"
+            
+            # Generate pre-signed URL for upload
+            presigned_url = generate_presigned_url(
+                'put_object',
+                {'Bucket': S3_BUCKET, 'Key': s3_key, 'ContentType': 'application/json'},
+                UPLOAD_EXPIRATION
+            )
+            
             return {
-                'status': 'error',
-                'message': 'Cloud cover is too much, please try another range'
+                'statusCode': 200,
+                'headers': cors_headers,
+                'body': json.dumps({
+                    'status': 'success',
+                    'upload_url': presigned_url,
+                    'filename': filename
+                })
+            }
+            
+        elif operation == 'analysis':
+            # Get parameters for analysis
+            start_date = request_body.get('start_date', START_DATE)
+            end_date = request_body.get('end_date', END_DATE)
+            output_prefix = request_body.get('output_prefix', OUTPUT_PREFIX)
+            filename = request_body.get('filename')
+            
+            if not filename:
+                return {
+                    'statusCode': 400,
+                    'headers': cors_headers,
+                    'body': json.dumps({
+                        'status': 'error',
+                        'message': 'Filename is required for analysis'
+                    })
+                }
+            
+            # Download required files from S3
+            s3.download_file(S3_BUCKET, EE_KEY_S3_KEY, EE_KEY_PATH)
+            
+            # Get user data file
+            user_data_key = f"uploads/{filename}"
+            s3.download_file(S3_BUCKET, user_data_key, DATA_PATH)
+            
+            # Initialize Earth Engine
+            credentials = ee.ServiceAccountCredentials(SERVICE_ACCOUNT, EE_KEY_PATH)
+            ee.Initialize(credentials)
+            print('Earth Engine initialized successfully')
+            
+            # Create output directory
+            output_dir = "/tmp/AVA_forest_classification"
+            if not os.path.exists(output_dir):
+                os.makedirs(output_dir)
+            
+            # Process the data
+            print(start_date, end_date, DATA_PATH)
+            result = process_natural_forest_classification(
+                DATA_PATH, 
+                start_date, 
+                end_date, 
+                output_dir
+            )
+            
+            if not result:
+                return {
+                    'statusCode': 400,
+                    'headers': cors_headers,
+                    'body': json.dumps({
+                        'status': 'error',
+                        'message': 'Cloud cover is too much, please try another date range'
+                    })
+                }
+            
+            image_file, stats_file, image_date = result
+            
+            # Calculate center of boundary box for file
+
+            # Calculate center of boundary box for file naming
+            minx, miny, maxx, maxy = boundary_box.bounds
+            center_lat = round((miny + maxy) / 2, 2)
+            center_lon = round((minx + maxx) / 2, 2)
+            lat_long = f"{center_lat:+.2f}{center_lon:+.2f}"  # e.g., +40.12-74.01
+            
+            # Upload results to S3 with new file naming
+            s3_image_key = f"{output_prefix}/{image_date}-{lat_long}-natural_forest_classification.png"
+            s3_stats_key = f"{output_prefix}/{image_date}-{lat_long}-natural_forest_stats.json"
+            
+            s3.upload_file(
+                image_file, 
+                S3_BUCKET, 
+                s3_image_key,
+                ExtraArgs={'ContentType': 'image/png'}
+            )
+            s3.upload_file(stats_file, S3_BUCKET, s3_stats_key)
+            
+            # Generate pre-signed URL for image download
+            image_download_url = generate_presigned_url(
+                'get_object',
+                {
+                    'Bucket': S3_BUCKET, 
+                    'Key': s3_image_key,
+                    'ResponseContentType': 'image/png',
+                    'ResponseContentDisposition': f'attachment; filename="{image_date}-{lat_long}-natural_forest_classification.png"'
+                },
+                DOWNLOAD_EXPIRATION
+            )
+            
+            # Read stats file
+            with open(stats_file, 'r') as f:
+                stats_data = json.load(f)
+            
+            return {
+                'statusCode': 200,
+                'headers': cors_headers,
+                'body': json.dumps({
+                    'status': 'success',
+                    'image_download_url': image_download_url,
+                    'image_date': image_date,
+                    'analysis_results': stats_data
+                })
             }
         
-        image_file, stats_file, image_date = result
-        
-        # Upload results to S3
-        s3_image_key = f"{output_prefix}/natural_forest_classification_{image_date}.png"
-        s3_stats_key = f"{output_prefix}/natural_forest_stats_{image_date}.json"
-        
-        s3.upload_file(image_file, S3_BUCKET, s3_image_key)
-        s3.upload_file(stats_file, S3_BUCKET, s3_stats_key)
-        
-        return {
-            'status': 'success',
-            'image_url': f's3://{S3_BUCKET}/{s3_image_key}',
-            'stats_url': f's3://{S3_BUCKET}/{s3_stats_key}',
-            'image_date': image_date
-        }
-        
+        else:
+            # Unknown operation
+            return {
+                'statusCode': 400,
+                'headers': cors_headers,
+                'body': json.dumps({
+                    'status': 'error',
+                    'body': request_body,
+                    'message': f"Unknown operation: {operation}. Valid operations are 'upload' or 'analysis'."
+                })
+            }
+            
     except Exception as e:
         import traceback
-        traceback.print_exc()
+        error_trace = traceback.format_exc()
+        print(error_trace)
+        
         return {
-            'status': 'error',
-            'message': str(e)
+            'statusCode': 500,
+            'headers': cors_headers,
+            'body': json.dumps({
+                'status': 'error',
+                'message': str(e),
+                'trace': error_trace if DEBUG else None
+            })
         }
 
+def parse_request_body(event):
+    """Parse request body from the event, handling different event formats"""
+    if 'body' not in event:
+        return {}
+    
+    body = event['body']
+    if body is None:
+        return {}
+    
+    # Handle both string and parsed JSON
+    if isinstance(body, str):
+        try:
+            return json.loads(body)
+        except:
+            return {}
+    else:
+        return body
+
+def sanitize_filename(filename):
+    """Sanitize the filename to prevent directory traversal and other issues"""
+    # Remove path components
+    filename = os.path.basename(filename)
+    # Replace potentially problematic characters
+    safe_chars = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
+    filename = ''.join(c if c in safe_chars else '_' for c in filename)
+    return filename
+
+def generate_presigned_url(operation, params, expiration=3600):
+    """Generate a pre-signed URL for S3 operations"""
+    try:
+        url = s3.generate_presigned_url(
+            ClientMethod=operation,
+            Params=params,
+            ExpiresIn=expiration
+        )
+        return url
+    except Exception as e:
+        print(f"Error generating presigned URL: {e}")
+        raise
+    
 def process_natural_forest_classification(json_path, start_date, end_date, output_dir):
     start_time = time.time()
     
@@ -113,9 +272,6 @@ def process_natural_forest_classification(json_path, start_date, end_date, outpu
     first_image = ee.Image(s2.first())
     cloud_cover = first_image.get('CLOUDY_PIXEL_PERCENTAGE').getInfo()
     print(f"Lowest cloud cover percentage: {cloud_cover}%")
-    if cloud_cover > 0.2:
-        print("Cloud cover is too much, please try another range")
-        return None
     image_date = ee.Date(first_image.get('system:time_start')).format('YYYY-MM-dd').getInfo()
     
     # Use more efficient filtering and processing for Dynamic World
@@ -156,14 +312,13 @@ def process_natural_forest_classification(json_path, start_date, end_date, outpu
 
 # Split the boundary box into smaller sub-rectangles
 def split_boundary_box(boundary_box, max_size_km=30):
-    minx, miny, maxx, maxy = boundary_box.bounds
+    minx, miny, maxx, maxy = [round(coord, 2) for coord in boundary_box.bounds]
 
     lat_mid = (miny + maxy) / 2
     km_per_deg_lon = 111 * math.cos(math.radians(lat_mid))
     km_per_deg_lat = 111
     width_km = (maxx - minx) * km_per_deg_lon
     height_km = (maxy - miny) * km_per_deg_lat
-    # print(f"Boundary box dimensions: {width_km:.2f} km x {height_km:.2f} km")
 
     if width_km <= max_size_km and height_km <= max_size_km:
         print("Boundary box is small enough, using single rectangle")
@@ -175,7 +330,6 @@ def split_boundary_box(boundary_box, max_size_km=30):
 
     num_x = math.ceil(width_km / max_size_km)
     num_y = math.ceil(height_km / max_size_km)
-    # print(f"Splitting boundary box into {num_x} x {num_y} sub-rectangles")
 
     step_x = (maxx - minx) / num_x
     step_y = (maxy - miny) / num_y
@@ -183,10 +337,10 @@ def split_boundary_box(boundary_box, max_size_km=30):
 
     for i in range(num_x):
         for j in range(num_y):
-            sub_minx = minx + i * step_x
-            sub_maxx = minx + (i + 1) * step_x
-            sub_miny = miny + j * step_y
-            sub_maxy = miny + (j + 1) * step_y
+            sub_minx = round(minx + i * step_x, 2)
+            sub_maxx = round(minx + (i + 1) * step_x, 2)
+            sub_miny = round(miny + j * step_y, 2)
+            sub_maxy = round(miny + (j + 1) * step_y, 2)
             sub_rect = box(sub_minx, sub_miny, sub_maxx, sub_maxy)
             if sub_rect.intersects(total_shapely_polygon):
                 sub_rectangles.append(sub_rect)
@@ -213,7 +367,7 @@ def export_sub_polygon_as_png(image, boundary, max_retries=3):
         try:
             url = rgb_image.getDownloadURL({
                 'region': boundary,
-                'scale': 20,  # Higher resolution
+                'scale': 20,
                 'format': 'png',
                 'maxPixels': 1e9
             })
@@ -277,7 +431,7 @@ def merge_images_properly(results, output_dir, image_date):
         print("No valid sub-rectangle results to merge")
         return None
 
-    minx, miny, maxx, maxy = boundary_box.bounds
+    minx, miny, maxx, maxy = [round(coord, 2) for coord in boundary_box.bounds]
     lat_mid = (miny + maxy) / 2
     meters_per_deg_lon = 111000 * math.cos(math.radians(lat_mid))
     meters_per_deg_lat = 111000
@@ -285,8 +439,8 @@ def merge_images_properly(results, output_dir, image_date):
     height_m = (maxy - miny) * meters_per_deg_lat
 
     # Adaptive scale factor based on area size
-    scale_factor = 10  # 10 meters per pixel
-    if width_m * height_m > 1e9:  # For very large areas
+    scale_factor = 10
+    if width_m * height_m > 1e9:
         scale_factor = 20
 
     width_pixels = int(width_m / scale_factor)
@@ -295,7 +449,7 @@ def merge_images_properly(results, output_dir, image_date):
     if width_pixels > max_dimension or height_pixels > max_dimension:
         scale_factor = max(width_pixels / max_dimension, height_pixels / max_dimension)
         width_pixels = int(width_pixels / scale_factor)
-        height_pixels = int(height_pixels / scale_factor)
+        height_pixels = int(height_m / scale_factor)
 
     # Create the merged image
     merged_img = Image.new('RGB', (width_pixels, height_pixels), (0, 0, 0))
@@ -309,7 +463,7 @@ def merge_images_properly(results, output_dir, image_date):
     for result in results:
         sub_img = result['png_image']
         sub_rect = result['shapely_sub_rect']
-        sub_minx, sub_miny, sub_maxx, sub_maxy = sub_rect.bounds
+        sub_minx, sub_miny, sub_maxx, sub_maxy = [round(coord, 2) for coord in sub_rect.bounds]
         x1, y1 = geo_to_pixel(sub_minx, sub_maxy)
         x2, y2 = geo_to_pixel(sub_maxx, sub_miny)
         sub_width = x2 - x1
@@ -325,7 +479,10 @@ def merge_images_properly(results, output_dir, image_date):
     masked_img = Image.composite(merged_img, Image.new('RGB', merged_img.size, (0, 0, 0)), boundary_mask)
 
     # Create final image with legend
-    final_image_file = os.path.join(output_dir, f"natural_forest_classification_with_legend_{image_date}.png")
+    center_lat = round((miny + maxy) / 2, 2)
+    center_lon = round((minx + maxx) / 2, 2)
+    lat_long = f"{center_lat:+.2f}{center_lon:+.2f}"
+    final_image_file = os.path.join(output_dir, f"{image_date}-{lat_long}-natural_forest_classification.png")
     create_final_image_with_legend(masked_img, final_image_file, image_date)
     return final_image_file
 
@@ -369,10 +526,10 @@ def load_boundary(json_path):
     wkt_polygon = data['city_geometry']
     polygon = wkt.loads(wkt_polygon)
 
-    bbox_west = data['bbox_west']
-    bbox_south = data['bbox_south']
-    bbox_east = data['bbox_east']
-    bbox_north = data['bbox_north']
+    bbox_west = round(data['bbox_west'], 2)
+    bbox_south = round(data['bbox_south'], 2)
+    bbox_east = round(data['bbox_east'], 2)
+    bbox_north = round(data['bbox_north'], 2)
     boundary_box = box(bbox_west, bbox_south, bbox_east, bbox_north)
 
     global CORRECT_AREA
@@ -415,137 +572,4 @@ def get_protected_areas(boundary_wkt, target_date_str):
         wdpa = ee.FeatureCollection('WCMC/WDPA/current/polygons')
 
     protected_areas = wdpa.filterBounds(boundary)
-    protected_mask = protected_areas.reduceToImage(
-        properties=['WDPAID'],
-        reducer=ee.Reducer.firstNonNull()
-    ).gt(0).rename('protected')
-    return protected_mask.clip(boundary)
-
-# Create the final image with the legend directly added using PIL
-def create_final_image_with_legend(map_img, output_file, image_date):
-    # Define legend data
-    colors = [
-        (65, 155, 223),   # Water
-        (57, 125, 73),    # Trees
-        (136, 176, 83),   # Grass
-        (122, 135, 198),  # Flooded Vegetation
-        (228, 150, 53),   # Crops
-        (223, 195, 90),   # Shrub & Scrub
-        (196, 40, 27),    # Built
-        (165, 155, 143),  # Bare
-        (179, 159, 225),  # Snow & Ice
-        (0, 0, 0),        # Cloud
-        (0, 64, 0)        # Natural Forest
-    ]
-    labels = [
-        'Water', 'Trees', 'Grass', 'Flooded Vegetation', 'Crops',
-        'Shrub & Scrub', 'Built', 'Bare', 'Snow & Ice', 'Cloud', 'Natural Forest'
-    ]
-
-    # Calculate dimensions
-    map_width, map_height = map_img.size
-    legend_width = 200  # Fixed width for the legend
-    legend_height = len(labels) * 50 + 20  # 30 pixels per label + padding
-    final_width = map_width + legend_width + 20  # 20 pixels padding
-    final_height = max(map_height, legend_height) + 60  # 60 pixels for title and padding
-
-    # Create the final image
-    final_img = Image.new('RGB', (final_width, final_height), (255, 255, 255))
-    final_img.paste(map_img, (10, 50))
-
-    # Draw the title
-    draw = ImageDraw.Draw(final_img)
-    title = f"Natural Forest Classification ({image_date})"
-    draw.text((10, 10), title, fill=(0, 0, 0))
-
-    # Draw the legend directly on the image
-    legend_x = map_width + 20
-    legend_y = 50
-    for i, (color, label) in enumerate(zip(colors, labels)):
-        # Draw color rectangle
-        rect_y = legend_y + i * 30
-        draw.rectangle(
-            [legend_x, rect_y, legend_x + 20, rect_y + 20],
-            fill=color
-        )
-        # Draw label text
-        draw.text(
-            (legend_x + 30, rect_y + 5),
-            label,
-            fill=(0, 0, 0)
-        )
-
-    # Save the final image
-    final_img.save(output_file)
-    return output_file
-
-# Calculate area statistics for the entire boundary with optimized reducer
-def calculate_area_statistics(image, boundary, total_area, image_date, output_dir):
-    CLASS_NAMES = [
-        'water', 'trees', 'grass', 'flooded_vegetation', 'crops',
-        'shrub_and_scrub', 'built', 'bare', 'snow_and_ice', 'cloud',
-        'natural_forest'
-    ]
-
-    # Use bestEffort for large areas and a higher scale for faster computation
-    histogram = image.reduceRegion(
-        reducer=ee.Reducer.frequencyHistogram(),
-        geometry=boundary,
-        scale=10,  # Match original code for better accuracy
-        maxPixels=1e13,
-        bestEffort=True,
-        tileScale=4
-    ).get('classification').getInfo() or {}
-
-    class_pixels = {}
-    total_pixels = 0
-
-    for class_value, pixel_count in histogram.items():
-        class_idx = int(class_value)
-        if class_idx < len(CLASS_NAMES):
-            class_pixels[CLASS_NAMES[class_idx]] = pixel_count
-            total_pixels += pixel_count
-
-    class_areas = {}
-    for class_name, pixels in class_pixels.items():
-        proportion = pixels / total_pixels if total_pixels > 0 else 0
-        class_areas[class_name] = round(proportion * total_area, 5)
-
-    for class_name in CLASS_NAMES:
-        if class_name not in class_areas:
-            class_areas[class_name] = 0.0
-
-    natural_forest_area = class_areas['natural_forest']
-    trees_area = class_areas['trees']
-    total_forest_area = natural_forest_area + trees_area
-
-    stats_data = {
-        "date": image_date,
-        "total_area_km2": round(total_area, 5),
-        "forest_area_km2": round(total_forest_area, 5),
-        "natural_forest_km2": round(natural_forest_area, 5),
-        "natural_forest_percentage": round((natural_forest_area / total_forest_area) * 100, 5) if total_forest_area > 0 else 0,
-        "other_trees_km2": round(trees_area, 5),
-        "other_trees_percentage": round((trees_area / total_forest_area) * 100, 5) if total_forest_area > 0 else 0,
-        "land_cover_classes": {}
-    }
-
-    for class_name, area_km2 in sorted(class_areas.items(), key=lambda item: item[1], reverse=True):
-        if area_km2 > 0:
-            percentage = (area_km2 / total_area) * 100 if total_area > 0 else 0
-            stats_data["land_cover_classes"][class_name] = {
-                "area_km2": round(area_km2, 5),
-                "percentage": round(percentage, 5)
-            }
-
-    stats_file = os.path.join(output_dir, f"natural_forest_stats_{image_date}.json")
-    with open(stats_file, 'w') as f:
-        json.dump(stats_data, f, indent=2)
-    return stats_data, stats_file
-
-if __name__ == "__main__":
-    print(lambda_handler(event, None))
-
-
-
- 
+    protected_mask = protected_areas
