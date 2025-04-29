@@ -1,37 +1,41 @@
-import React from 'react'
-import ReactDOM from 'react-dom'
+import React from 'react';
+import { createRoot } from 'react-dom/client';   
 import {
   BrowserRouter as Router,
   Route,
   Switch,
   Redirect,
-} from 'react-router-dom'
+} from 'react-router-dom';
 
-import './index.css'
+import './index.css';
 
-import Upload from './views/Upload'
-import DatePicker from './views/DatePicker'
-import LandingPage1 from './views/MapAnalysis'
-import NotFound from './views/Error'
-import AppHeader from './views/AppHeader'
+import Upload from './views/Upload';
+import MapAnalysis from './views/MapAnalysis';
+import ErrorModal from './views/ErrorModal';
+import NotFound from './views/Error';
+import AppHeader from './views/AppHeader';
+import ProtectedRoute from './views/ProtectedRoute';
 
 const App = () => {
   return (
     <Router>
-     <AppHeader/>
+      <AppHeader />
       <Switch>
         <Route component={Upload} exact path="/" />
-        <Route component={DatePicker} exact path="/date" />
-        <Route component={LandingPage1} exact path="/landing" />
-        {/*
-        <Route component={OpenEarthDatePicker} exact path="/" />
-        <Route component={LandingPage1} exact path="/" />*/}
-        
+        <ProtectedRoute component={ErrorModal} exact path="/errormsg" />
+        <ProtectedRoute component={MapAnalysis} exact path="/landing" />
         <Route component={NotFound} path="**" />
         <Redirect to="**" />
       </Switch>
     </Router>
-  )
-}
+  );
+};
 
-ReactDOM.render(<App />, document.getElementById('app'))
+
+const container = document.getElementById('app');
+const root = createRoot(container);
+root.render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
