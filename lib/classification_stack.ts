@@ -19,11 +19,6 @@ export class ForestClassificationStack extends cdk.Stack {
       description: 'The name of the S3 bucket to store input/output files. Must be globally unique.',
     });
 
-    const geeServiceAccountParam = new cdk.CfnParameter(this, 'GeeServiceAccount', {
-      type: 'String',
-      description: 'Google Earth Engine service account email (e.g., your-account@your-project.iam.gserviceaccount.com)',
-    });
-
     const geeCredentialsFileParam = new cdk.CfnParameter(this, 'GeeCredentialsFile', {
       type: 'String',
       description: 'Name of the Google Earth Engine credentials file in the S3 bucket (e.g., credentials/custom-gee-credentials.json)',
@@ -32,7 +27,6 @@ export class ForestClassificationStack extends cdk.Stack {
     // Use parameter values
     const assetsBucketName = assetsBucketNameParam.valueAsString;
     const bucketName = bucketNameParam.valueAsString;
-    const geeServiceAccount = geeServiceAccountParam.valueAsString;
     const geeCredentialsFile = geeCredentialsFileParam.valueAsString;
 
     // Reference the assets bucket
@@ -48,26 +42,25 @@ export class ForestClassificationStack extends cdk.Stack {
     // Create the Lambda function layers with fixed S3 keys
     const earthEngineLayer = new lambda.LayerVersion(this, 'EarthEngineLayer', {
       code: lambda.Code.fromBucket(assetsBucket, 'layers/earth_engine_layer.zip'),
-      compatibleRuntimes: [lambda.Runtime.PYTHON_3_9],
+      compatibleRuntimes: [lambda.Runtime.PYTHON_3_13],
       description: 'Earth Engine API and dependencies',
     });
 
     const imageProcessingLayer = new lambda.LayerVersion(this, 'ImageProcessingLayer', {
       code: lambda.Code.fromBucket(assetsBucket, 'layers/image_processing.zip'),
-      compatibleRuntimes: [lambda.Runtime.PYTHON_3_9],
+      compatibleRuntimes: [lambda.Runtime.PYTHON_3_13],
       description: 'PIL, Shapely, and other image processing libraries',
     });
 
     // Create the Lambda function using code from S3 with fixed S3 key
     const forestClassificationLambda = new lambda.Function(this, 'ForestClassificationLambda', {
-      runtime: lambda.Runtime.PYTHON_3_9,
+      runtime: lambda.Runtime.PYTHON_3_13,
       handler: 'lambda_function.lambda_handler',
       code: lambda.Code.fromBucket(assetsBucket, 'lambda-function-code.zip'),
       memorySize: 10240,
       timeout: cdk.Duration.seconds(900),
       environment: {
         S3_BUCKET: bucket.bucketName,
-        SERVICE_ACCOUNT: geeServiceAccount,
         EE_KEY_S3_KEY: geeCredentialsFile,
         EE_KEY_PATH: '/tmp/ee-key.json',
         DATA_PATH: '/tmp/data.json',
@@ -78,6 +71,15 @@ export class ForestClassificationStack extends cdk.Stack {
         DEBUG: 'false',
       },
       layers: [earthEngineLayer, imageProcessingLayer],
+    });
+
+    const functionUrl = forestClassificationLambda.addFunctionUrl({
+      authType: lambda.FunctionUrlAuthType.NONE, // Public access; use AWS_IAM for IAM-based auth if needed
+      cors: {
+        allowedOrigins: ['*'], // Match ALLOWED_ORIGINS from Lambda environment
+        allowedMethods: [lambda.HttpMethod.GET, lambda.HttpMethod.POST, lambda.HttpMethod.OPTIONS],
+        allowedHeaders: ['Content-Type', 'X-Amz-Date', 'Authorization', 'X-Api-Key', 'X-Amz-Security-Token'],
+      },
     });
 
     // Grant the Lambda function permissions to read/write to the S3 bucket
@@ -109,5 +111,11 @@ export class ForestClassificationStack extends cdk.Stack {
       value: `Upload your data files to s3://${bucket.bucketName}/uploads/ and ensure the GEE credentials file is at s3://${bucket.bucketName}/${geeCredentialsFile}`,
       description: 'Instructions for using the S3 bucket',
     });
+
+    new cdk.CfnOutput(this, 'LambdaFunctionUrl', {
+      value: functionUrl.url,
+      description: 'The URL of the Forest Classification Lambda function for front-end integration',
+    });
+    
   }
 }
