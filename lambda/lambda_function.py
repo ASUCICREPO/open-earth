@@ -19,7 +19,7 @@ s3 = boto3.client('s3')
 
 # Get environment variables (no default values)
 S3_BUCKET = os.environ['S3_BUCKET']
-SERVICE_ACCOUNT = os.environ['SERVICE_ACCOUNT']
+# SERVICE_ACCOUNT = os.environ['SERVICE_ACCOUNT']
 EE_KEY_PATH = os.environ['EE_KEY_PATH']
 DATA_PATH = os.environ['DATA_PATH']
 EE_KEY_S3_KEY = os.environ['EE_KEY_S3_KEY']
@@ -100,13 +100,20 @@ def lambda_handler(event, context):
             
             # Download required files from S3
             s3.download_file(S3_BUCKET, EE_KEY_S3_KEY, EE_KEY_PATH)
+
+            # Read the GEE credentials file to extract the client_email
+            with open(EE_KEY_PATH, 'r') as f:
+                gee_credentials = json.load(f)
+                service_account = gee_credentials.get('client_email')
+                if not service_account:
+                    raise ValueError("client_email not found in GEE credentials file")
             
             # Get user data file
             user_data_key = f"uploads/{filename}"
             s3.download_file(S3_BUCKET, user_data_key, DATA_PATH)
             
             # Initialize Earth Engine
-            credentials = ee.ServiceAccountCredentials(SERVICE_ACCOUNT, EE_KEY_PATH)
+            credentials = ee.ServiceAccountCredentials(service_account, EE_KEY_PATH)
             ee.Initialize(credentials)
             print('Earth Engine initialized successfully')
             
@@ -271,6 +278,11 @@ def process_natural_forest_classification(json_path, start_date, end_date, outpu
     first_image = ee.Image(s2.first())
     cloud_cover = first_image.get('CLOUDY_PIXEL_PERCENTAGE').getInfo()
     print(f"Lowest cloud cover percentage: {cloud_cover}%")
+
+    if cloud_cover > 1:
+        print("Cloud cover is too much, please try another range")
+        return None
+    
     image_date = ee.Date(first_image.get('system:time_start')).format('YYYY-MM-dd').getInfo()
     
     # Use more efficient filtering and processing for Dynamic World
