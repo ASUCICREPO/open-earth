@@ -19,7 +19,7 @@ s3 = boto3.client('s3')
 
 # Get environment variables (no default values)
 S3_BUCKET = os.environ['S3_BUCKET']
-# SERVICE_ACCOUNT = os.environ['SERVICE_ACCOUNT']
+ASSETS_BUCKET = os.environ['ASSETS_BUCKET']  # Bucket for assets (assetsBucketNameParam)
 EE_KEY_PATH = os.environ['EE_KEY_PATH']
 DATA_PATH = os.environ['DATA_PATH']
 EE_KEY_S3_KEY = os.environ['EE_KEY_S3_KEY']
@@ -99,7 +99,7 @@ def lambda_handler(event, context):
                 }
             
             # Download required files from S3
-            s3.download_file(S3_BUCKET, EE_KEY_S3_KEY, EE_KEY_PATH)
+            s3.download_file(ASSETS_BUCKET, EE_KEY_S3_KEY, EE_KEY_PATH)
 
             # Read the GEE credentials file to extract the client_email
             with open(EE_KEY_PATH, 'r') as f:

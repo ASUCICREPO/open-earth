@@ -61,6 +61,7 @@ export class ForestClassificationStack extends cdk.Stack {
       timeout: cdk.Duration.seconds(900),
       environment: {
         S3_BUCKET: bucket.bucketName,
+        ASSETS_BUCKET: assetsBucketName,
         EE_KEY_S3_KEY: geeCredentialsFile,
         EE_KEY_PATH: '/tmp/ee-key.json',
         DATA_PATH: '/tmp/data.json',
