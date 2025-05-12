@@ -1,20 +1,25 @@
-# Open Earth Foundation Land Usage Classification System
+# Forest Classification Project
 
-This project provides a system for classifying land usage types within geographical boundaries using satellite imagery and AI-driven geospatial analysis. It integrates Google Earth Engine (GEE) with AWS services to deliver detailed land usage maps and statistics, supporting environmental monitoring and greenhouse gas inventory calculations.
+## Project Overview
+This project provides an AWS Lambda-based solution for land usage classification, focusing on natural forest classification using Google Earth Engine (GEE). The infrastructure is deployed via a provided CloudFormation template, and a frontend interface allows users to upload data and trigger the classification process.
 
-The system consists of a React-based frontend for user interaction and a serverless backend powered by AWS CDK that handles data processing, GEE integration, and result generation. The application leverages GEE for processing satellite imagery and AWS Bedrock for potential future AI enhancements.
+---
 
 ## Repository Structure
 ```
-.
 ├── backend/                    # AWS CDK Infrastructure as Code
 │   ├── bin/                    # CDK app entry point
-│   │   └── open-earth.ts       # CDK app definition
+│   │   └── forest-classification.ts       # CDK app definition
 │   ├── lambda/                 # Lambda functions for data processing
-│   │   └── forest_classification/  # Lambda for land usage classification
-│   │       └── lambda_function.py  # Main Lambda handler
+│   │   └── lambda-function.py  # Lambda for land usage classification
+│   │   └── lambda-function-code.zip  # Zipped Lambda function code
 │   └── lib/                    # CDK stack definition
-│       └── forest-stack.ts     # ForestClassificationStack definition
+│   │   └── classification_stack.ts     # ForestClassificationStack definition
+│   ├── cdk.json                    # CDK configuration file
+│   ├── package.json                # Node.js dependencies
+│   ├── requirements.txt            # Python dependencies for Lambda
+│   └── tsconfig.json               # TypeScript configuration
+│
 └── frontend/                   # React frontend application
     ├── public/                 # Static assets
     └── src/                    # Source code
@@ -23,115 +28,154 @@ The system consists of a React-based frontend for user interaction and a serverl
         └── utilities/         # Helper functions and constants
 ```
 
-## Usage Instructions
-### Prerequisites
-- **Node.js** 16.x or later
-- **AWS CLI** configured with appropriate credentials
-- **AWS CDK CLI** installed (`npm install -g aws-cdk`)
-- **Python** 3.9 for Lambda functions
-- **pip** for installing Python dependencies
-- **Google Earth Engine Credentials** (`ee-ridhamsonani3-access_key.json` or your own GEE credentials)
+---
 
-### Installation
+## Prerequisites
+Before starting, ensure the following prerequisites are met:
 
-1. Clone the repository:
+### 1. AWS Account
+- **Description**: An active AWS account is required to deploy and manage resources.
+- **Setup**:
+  1. Sign up for an AWS account at [aws.amazon.com](https://aws.amazon.com).
+  2. Install the AWS CLI:
+     ```bash
+     pip install awscli
+     ```
+  3. Configure your AWS CLI with credentials:
+     ```bash
+     aws configure
+     ```
+     - Provide your AWS Access Key ID, Secret Access Key, region (e.g., `us-east-1`), and output format (e.g., `json`).
+
+### 2. Google Earth Engine (GEE) Service Account
+- **Description**: A GEE service account is required to authenticate and access GEE APIs.
+- **Setup**:
+  1. Sign up for Google Earth Engine at [earthengine.google.com](https://earthengine.google.com).
+  2. Create a Google Cloud project and enable the Earth Engine API.
+  3. Go to the Google Cloud Console > IAM & Admin > Service Accounts.
+  4. Create a service account, assign it Earth Engine access, and download the JSON credentials file (e.g., `ee-credentials.json`).
+  5. Store this file securely—it will be uploaded to an S3 bucket later.
+
+### 3. S3 Bucket for Assets
+- **Description**: An S3 bucket is required to store Lambda function code, GEE credentials, and Lambda layers.
+- **Setup**:
+  1. Create an S3 bucket in your AWS account (e.g., `your-assets-bucket`) via the AWS Management Console or CLI:
+     ```bash
+     aws s3 mb s3://your-assets-bucket --region your-region
+     ```
+  2. Upload the following files to the bucket:
+     - `lambda-function-code.zip`: The zipped Lambda function code (provided).
+     - `ee-credentials.json`: The GEE service account credentials file.
+     - `layers/earth_engine_layer.zip`: ZIP file containing the Earth Engine Python library (provided).
+     - `layers/image_processing.zip`: ZIP file containing image processing libraries (provided).
+  3. Example upload command:
+     ```bash
+     aws s3 cp lambda-function-code.zip s3://your-assets-bucket/
+     ```
+
+---
+
+## Architecture Overview
+The system is designed with a modular architecture for scalability and ease of use:
+
+- **Frontend**: 
+  - A user-friendly interface where users upload a `data.json` file (containing geospatial boundary data) and specify a date range (`start_date` and `end_date`).
+  - Sends requests to the AWS Lambda function to initiate classification and retrieves results.
+
+- **AWS Lambda**:
+  - The core processing unit that performs land usage classification using GEE.
+  - Triggered by the frontend, it downloads GEE credentials and input data from S3, processes the data, and uploads results back to S3.
+
+- **S3 Buckets**:
+  - **Assets Bucket**: Stores static assets like Lambda code, GEE credentials, and Lambda layers (e.g., `your-assets-bucket`).
+  - **Input/Output Bucket**: Stores user-uploaded `data.json` files and the resulting classification images and statistics.
+
+- **Google Earth Engine (GEE)**:
+  - Provides geospatial data and processing capabilities for land classification, accessed via the Lambda function.
+
+- **CloudFormation**:
+  - Deploys the entire infrastructure (Lambda, S3 buckets, IAM roles) using a provided template file.
+
+---
+
+## Setup Instructions
+Follow these steps to prepare the project:
+
+### 1. Clone the Repository
 ```bash
-git clone <repository-url>
-cd open-earth
+git clone https://github.com/your-repo/forest-classification.git
+cd forest-classification
 ```
 
-2. Install frontend dependencies:
-```bash
-cd frontend
-npm install
-```
+### 2. Upload Assets to S3
+- **Description**: Upload the necessary files to your assets S3 bucket.
+- **Action**:
+  ```bash
+  aws s3 cp lambda-function-code.zip s3://your-assets-bucket/
+  aws s3 cp ee-credentials.json s3://your-assets-bucket/credentials/
+  aws s3 cp layers/earth_engine_layer.zip s3://your-assets-bucket/layers/
+  aws s3 cp layers/image_processing.zip s3://your-assets-bucket/layers/
+  ```
 
-3. Install backend dependencies:
-```bash
-cd ../cdk_backend
-npm install
-```
+---
 
-4. Deploy the CDK stack:
-```bash
-cdk deploy ForestClassificationStack
-```
+## Deployment
+Deploy the infrastructure using the provided CloudFormation template:
 
-### Quick Start
-1. Start the frontend development server:
-```bash
-cd frontend
-npm start
-```
+### 1. Upload the CloudFormation Template
+- **Description**: Upload the provided CloudFormation template to AWS.
+- **Action**:
+  1. Go to the AWS Management Console > CloudFormation > Stacks > Create stack.
+  2. Choose "Upload a template file" and select the `ForestClassificationStack.template.json` file (provided).
+  3. Click "Next".
 
-2. Open your browser and navigate to `http://localhost:3000`
+### 2. Specify Stack Details
+- **Description**: Provide the required parameters for the stack.
+- **Parameters**:
+  - `AssetsBucketName`: The S3 bucket where assets are stored (e.g., `your-assets-bucket`).
+  - `BucketName`: The S3 bucket for input/output data (e.g., `your-input-output-bucket`).
+  - `GeeCredentialsFile`: The path to the GEE credentials file in the assets bucket (e.g., `credentials/ee-credentials.json`).
+- **Action**:
+  1. Enter the parameter values.
+  2. Click "Next".
 
-3. Upload a GeoJSON file and select a date range to analyze land usage
+### 3. Configure Stack Options
+- **Description**: Optionally configure stack options like tags or IAM roles.
+- **Action**:
+  1. Add any necessary tags or permissions.
+  2. Click "Next".
 
-### More Detailed Examples
-1. Analyze land usage for a specific area:
-```
-- Upload a GeoJSON file with boundary coordinates
-- Select a date range (e.g., 2023-06-01 to 2024-07-30)
-- View the classified map and area statistics
-```
+### 4. Review and Create Stack
+- **Description**: Review the stack configuration and create the stack.
+- **Action**:
+  1. Review the details.
+  2. Check "I acknowledge that AWS CloudFormation might create IAM resources."
+  3. Click "Create stack".
 
-2. Test with different date ranges:
-```
-- Use a date range with high cloud cover to test error handling
-- Analyze a large area to verify processing performance
-```
+### 5. Verify Deployment
+- **Description**: Confirm that resources are created successfully.
+- **Action**: Check the AWS Management Console:
+  - **S3**: Verify buckets exist.
+  - **Lambda**: Confirm the `ForestClassificationLambda` function is deployed.
+  - **CloudFormation**: Ensure the stack status is `CREATE_COMPLETE`.
 
-### Troubleshooting
-1. S3 Bucket Name Conflict
-- Error: "S3 bucket already exists"
-  - The stack generates a unique bucket name using your AWS account ID and timestamp
-  - If the error persists, specify a custom name with `--parameters s3BucketName=<unique-name>`
+---
 
-2. Lambda Function Errors
-- Error: "Lambda function timed out"
-  - Check CloudWatch logs for detailed error messages
-  - Increase the Lambda timeout in the CDK stack if needed
-  - Verify memory allocation (set to 10,240 MB)
+## Using the Frontend
+The frontend provides an easy way to interact with the classification system:
 
-3. GEE Authentication Issues
-- Error: "Failed to authenticate with Google Earth Engine"
-  - Ensure the GEE credentials file is uploaded to S3
-  - Verify the `SERVICE_ACCOUNT` matches the credentials file
-  - Check Lambda logs for detailed errors
+1. **Upload Data File**:
+   - Upload a `data.json` file containing geospatial boundary data.
+2. **Specify Date Range**:
+   - Enter the `start_date` and `end_date` for the analysis.
+3. **Trigger Analysis**:
+   - Submit the data via the frontend to trigger the Lambda function.
+4. **View Results**:
+   - Download the classified image and statistics from the provided links in the frontend.
 
-## Data Flow
-The system processes GeoJSON files through a pipeline that integrates GEE for geospatial analysis and AWS for storage and compute.
+---
 
-```
-[User Input] -> [API Gateway] -> [Lambda Handler] -> [Google Earth Engine]
-                                              -> [S3 Storage]
-     [UI] <- [HTTP Response] <- [Processed Results]
-```
-
-Key component interactions:
-- Frontend sends GeoJSON files and date ranges via HTTP POST requests
-- API Gateway routes requests to the Lambda function
-- Lambda processes the data using GEE (Dynamic World, WDPA datasets)
-- Results (classified maps and stats) are stored in S3
-- Pre-signed URLs and stats are returned to the UI for display
-
-## Infrastructure
-
-![Infrastructure diagram](./docs/infra.svg)  
-*The infrastructure diagram is a placeholder. Create a diagram using tools like draw.io and save it in the `docs/` directory.*
-
-The application is deployed using AWS CDK with the following key resources:
-
-**Lambda Functions:**
-- **ForestClassificationLambda**: Processes GeoJSON files, integrates with GEE, and generates classified maps and statistics.
-
-**AWS Services:**
-- **S3 Bucket**: Stores GeoJSON files, GEE credentials, Lambda code, and output files (maps, stats).
-- **API Gateway**: HTTP API endpoint for frontend-backend communication.
-- **IAM**: Roles and permissions for Lambda to access S3 and CloudWatch.
-- **CloudWatch**: Logs for monitoring Lambda execution.
-
-**External Services:**
-- **Google Earth Engine**: Provides satellite imagery and geospatial datasets (Dynamic World, WDPA).
-
+## Additional Notes
+- **Security**: Ensure the S3 bucket with `ee-credentials.json` has public access blocked and appropriate IAM policies.
+- **Cost Management**: Monitor AWS usage to avoid unexpected charges, especially for large-scale GEE data processing.
+- **Updates**: If you modify the Lambda code or layers, re-upload the ZIP files to the assets bucket and update the CloudFormation stack.
