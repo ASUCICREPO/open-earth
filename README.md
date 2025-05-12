@@ -7,7 +7,7 @@ The system consists of a React-based frontend for user interaction and a serverl
 ## Repository Structure
 ```
 .
-├── cdk_backend/                 # AWS CDK Infrastructure as Code
+├── backend/                    # AWS CDK Infrastructure as Code
 │   ├── bin/                    # CDK app entry point
 │   │   └── open-earth.ts       # CDK app definition
 │   ├── lambda/                 # Lambda functions for data processing
