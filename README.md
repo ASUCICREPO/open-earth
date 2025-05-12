@@ -76,6 +76,9 @@ Before starting, ensure the following prerequisites are met:
 ---
 
 ## Architecture Overview
+![Architecture Diagram](Architechture_Diagram.png).
+
+
 The system is designed with a modular architecture for scalability and ease of use:
 
 - **Frontend**: 
