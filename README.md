@@ -9,23 +9,43 @@ This project provides an AWS Lambda-based solution for land usage classification
 ```
 ├── backend/                    # AWS CDK Infrastructure as Code
 │   ├── bin/                    # CDK app entry point
-│   │   └── forest-classification.ts       # CDK app definition
+│   │   └── forest-classification.ts       
 │   ├── lambda/                 # Lambda functions for data processing
-│   │   └── lambda-function.py  # Lambda for land usage classification
-│   │   └── lambda-function-code.zip  # Zipped Lambda function code
-│   └── lib/                    # CDK stack definition
-│   │   └── classification_stack.ts     # ForestClassificationStack definition
-│   ├── cdk.json                    # CDK configuration file
-│   ├── package.json                # Node.js dependencies
-│   ├── requirements.txt            # Python dependencies for Lambda
-│   └── tsconfig.json               # TypeScript configuration
+│   │   ├── lambda-function.py  
+│   │   └── lambda-function-code.zip  
+│   ├── lib/                    # CDK stack definition
+│   │   └── classification_stack.ts     
+│   ├── cdk.json                # CDK CLI configuration      
+│   ├── package.json            # Node.js dependencies & scripts  
+│   ├── requirements.txt        # Python dependencies for Lambdas  
+│   └── tsconfig.json           # TypeScript compiler settings   
 │
 └── frontend/                   # React frontend application
-    ├── public/                 # Static assets
-    └── src/                    # Source code
-        ├── Components/         # React components
-        │   └── UploadForm.jsx  # File upload and analysis form
-        └── utilities/         # Helper functions and constants
+    ├── public/                   
+    │   ├── index.html          # HTML shell for mounting the React app  
+    │   └── external/           # unbundled assets (images, SVGs, media)  
+    ├── src/                            
+    │   ├── components/         # reusable UI components           
+    │   │   ├── AppHeader.jsx       # top navigation bar with logo & links  
+    │   │   ├── ErrorModal.jsx      # modal dialog for displaying errors  
+    │   │   └── ProtectedRoute.jsx  # route guard enforcing authentication  
+    │   ├── pages/              # view components mapped to routes  
+    │   │   ├── Error.jsx           # full‐page error/fallback screen  
+    │   │   ├── MapAnalysis.jsx     # interactive map visualization  
+    │   │   └── Upload.jsx          # file upload form with validation  
+    │   ├── utilities/           # helper functions & service clients  
+    │   │   └── apiService.jsx       # centralized API request handler  
+    │   ├── index.js             # app entry point that boots React  
+    │   └── index.css            # global styles & CSS variables  
+    ├── build/                   
+    │   ├── index.html            # minified HTML for deployment    
+    │   └── open_earth.zip        # zipped bundle of static assets  
+    ├── .env                    # environment variable declarations  
+    ├── .gitignore              # files & folders to ignore in Git  
+    ├── craco.config.js         # CRA config overrides without ejecting  
+    ├── package.json            # npm dependencies & project scripts  
+    └── package-lock.json       # exact dependency versions lockfile  
+
 ```
 
 ---
@@ -119,6 +139,18 @@ cd forest-classification
   aws s3 cp layers/earth_engine_layer.zip s3://your-assets-bucket/layers/
   aws s3 cp layers/image_processing.zip s3://your-assets-bucket/layers/
   ```
+  ### 3. Start the React App
+- **Description**: Verify prerequisites, install dependencies, and launch the development server.
+- **Action**:
+
+```bash
+ clone the project
+ cd Frontend
+ node -v         # confirm Node.js is installed
+ npm -v          # confirm npm is installed
+ npm install     # install project dependencies
+ npm start       # start React on http://localhost:3000
+
 
 ---
 
