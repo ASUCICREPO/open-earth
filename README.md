@@ -152,7 +152,10 @@ cd forest-classification
  npm start       # start React on http://localhost:3000
 
 
+```
+
 ---
+
 
 ## Deployment
 Deploy the infrastructure using the provided CloudFormation template:
