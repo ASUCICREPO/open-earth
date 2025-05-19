@@ -201,15 +201,38 @@ Deploy the infrastructure using the provided CloudFormation template:
 
 ## Using the Frontend
 The frontend provides an easy way to interact with the classification system:
+To deploy the Frontend, follow these steps:
 
-1. **Upload Data File**:
-   - Upload a `data.json` file containing geospatial boundary data.
-2. **Specify Date Range**:
-   - Enter the `start_date` and `end_date` for the analysis.
-3. **Trigger Analysis**:
-   - Submit the data via the frontend to trigger the Lambda function.
-4. **View Results**:
-   - Download the classified image and statistics from the provided links in the frontend.
+1. **Clone & Install Dependencies**
+  - Clone the repository:
+    git clone <repository-url>
+  - Move to the Frontend folder:
+    cd <project-root>/Frontend
+  - Install all required packages:
+    npm install
+    
+2. **Run Locally**
+   - Start the development server:
+     npm start
+   - If you hit any errors, verify your versions:
+     npm -v    # should be ≈ 10.9.2  
+     node -v   # should be ≈ v23.9.0
+
+3. **Build for Production**
+   - Generate an optimized production build:
+      npm run build (This creates a build/ folder).
+   - Open the project in your local and zip the contents of the build/ folder (not the folder itself).
+
+4. **Deploy on AWS Amplify**
+   - In the Amplify console, choose Create new app → Deploy without Git.
+   - Give your app a name and stage, upload the zip, then click Save and deploy.
+   - After a short wait, Amplify will present your live application URL
+
+5. **Once Deployed**
+   - Upload Data File: Upload a `data.json` file containing geospatial boundary data.
+   - Specify Date Range: Enter the `start_date` and `end_date` for the analysis. (Note: For larger JSON files, to get better results without much cloud coverage, choose a larger date range (preferably 1–2 months).
+   - Trigger Analysis: Submit the data via the frontend to trigger the Lambda function.
+   - View Results: Download the classified image and statistics from the provided dowload button in the frontend.
 
 ---
 
