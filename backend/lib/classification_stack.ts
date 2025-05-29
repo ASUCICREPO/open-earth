@@ -37,6 +37,13 @@ export class ForestClassificationStack extends cdk.Stack {
       bucketName: bucketName,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      cors: [{
+        allowedOrigins: ['*'],
+        allowedMethods: [s3.HttpMethods.GET, s3.HttpMethods.PUT],
+        allowedHeaders: ['*'],
+        exposedHeaders: [],      // optional
+        maxAge: 3600             // optional
+      }]
     });
 
     // Create the Lambda function layers with fixed S3 keys
@@ -76,11 +83,6 @@ export class ForestClassificationStack extends cdk.Stack {
 
     const functionUrl = forestClassificationLambda.addFunctionUrl({
       authType: lambda.FunctionUrlAuthType.NONE, // Public access; use AWS_IAM for IAM-based auth if needed
-      cors: {
-        allowedOrigins: ['*'], // Match ALLOWED_ORIGINS from Lambda environment
-        allowedMethods: [lambda.HttpMethod.GET, lambda.HttpMethod.POST, lambda.HttpMethod.OPTIONS],
-        allowedHeaders: ['Content-Type', 'X-Amz-Date', 'Authorization', 'X-Api-Key', 'X-Amz-Security-Token'],
-      },
     });
 
     // Grant the Lambda function permissions to read/write to the S3 bucket
