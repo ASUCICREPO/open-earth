@@ -72,7 +72,7 @@ export class ForestClassificationStack extends cdk.Stack {
         EE_KEY_S3_KEY: geeCredentialsFile,
         EE_KEY_PATH: '/tmp/ee-key.json',
         DATA_PATH: '/tmp/data.json',
-        DEFAULT_OUTPUT_PREFIX: 'forest_classification',
+        OUTPUT_PREFIX: 'forest_classification',
         UPLOAD_EXPIRATION: '3600',
         DOWNLOAD_EXPIRATION: '86400',
         ALLOWED_ORIGINS: '*',
