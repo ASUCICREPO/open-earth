@@ -53,15 +53,16 @@ This project provides an AWS Lambda-based solution for land usage classification
 ## Prerequisites
 Before starting, ensure the following prerequisites are met:
 
-### 1. AWS Account
+### 1. AWS Account And IAM User
 - **Description**: An active AWS account is required to deploy and manage resources.
 - **Setup**:
   1. Sign up for an AWS account at [aws.amazon.com](https://aws.amazon.com).
-  2. Install the AWS CLI:
+  2. Create an IAM User with Enable Programmatic access and AWS Management Console access.
+  3. Install the AWS CLI:
      ```bash
      pip install awscli
      ```
-  3. Configure your AWS CLI with credentials:
+  4. Configure your AWS CLI with credentials:
      ```bash
      aws configure
      ```
@@ -92,6 +93,33 @@ Before starting, ensure the following prerequisites are met:
      ```bash
      aws s3 cp lambda-function-code.zip s3://your-assets-bucket/
      ```
+
+  ### 4. Local development tools
+  
+  1. **Python (3.13)**
+       - Install Python 3.13 (required for the Lambda runtime) from [Python.org](https://www.python.org/downloads/)
+       - Verify installation:
+         ```
+            python3 --version
+         ```
+  
+
+  2. **AWS CLI**: To interact with AWS services and set up credentials.
+
+        - [Install AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/install-cliv2.html)
+     
+  3. **npm**  
+        - npm is required to install AWS CDK. Install npm by installing Node.js:  
+          - [Download Node.js](https://nodejs.org/) (includes npm).  
+        - Verify npm installation:  
+             ```bash
+             npm --version
+             ```
+  4. **AWS CDK**: For defining cloud infrastructure in code.
+        - [Install AWS CDK](https://docs.aws.amazon.com/cdk/v2/guide/getting_started.html)  
+             ```bash
+             npm install -g aws-cdk
+             ```
 
 ---
 
@@ -139,7 +167,8 @@ cd forest-classification
   aws s3 cp layers/earth_engine_layer.zip s3://your-assets-bucket/layers/
   aws s3 cp layers/image_processing.zip s3://your-assets-bucket/layers/
   ```
-  ### 3. Start the React App
+
+### 3. Start the React App
 - **Description**: Verify prerequisites, install dependencies, and launch the development server.
 - **Action**:
 
@@ -160,42 +189,43 @@ cd forest-classification
 ## Deployment
 Deploy the infrastructure using the provided CloudFormation template:
 
-### 1. Upload the CloudFormation Template
-- **Description**: Upload the provided CloudFormation template to AWS.
+### 1. Install Backend Dependencies
+- **Description**: 
 - **Action**:
-  1. Go to the AWS Management Console > CloudFormation > Stacks > Create stack.
-  2. Choose "Upload a template file" and select the `ForestClassificationStack.template.json` file (provided).
-  3. Click "Next".
+  1. cd backend
+  2. Install Node.js dependencies:
+     ```bash
+     npm install
+     ```
+  4. Ensure package.json includes dependencies like aws-cdk-lib, constructs, and source-map-support.
 
-### 2. Specify Stack Details
-- **Description**: Provide the required parameters for the stack.
-- **Parameters**:
-  - `AssetsBucketName`: The S3 bucket where assets are stored (e.g., `your-assets-bucket`).
-  - `BucketName`: The S3 bucket for input/output data (e.g., `your-input-output-bucket`).
-  - `GeeCredentialsFile`: The path to the GEE credentials file in the assets bucket (e.g., `credentials/ee-credentials.json`).
+### 2. Bootstrap the CDK Environment
+- **Description**: Bootstrap your AWS account for CDK deployments in backend folder:
 - **Action**:
-  1. Enter the parameter values.
-  2. Click "Next".
+     ```bash
+     cdk bootstrap
+     ```
 
-### 3. Configure Stack Options
-- **Description**: Optionally configure stack options like tags or IAM roles.
+### 3. Deploy the CDK Stack
+- **Description**: Deploy the ForestClassificationStack with the required parameters:
 - **Action**:
-  1. Add any necessary tags or permissions.
-  2. Click "Next".
+     ```bash
+         cdk deploy ForestClassificationStack \
+      --parameters AssetsBucketName={assets bucket name }\
+      --parameters BucketName={bucket name } \
+      --parameters GeeCredentialsFile={credentials file name}
 
-### 4. Review and Create Stack
-- **Description**: Review the stack configuration and create the stack.
-- **Action**:
-  1. Review the details.
-  2. Check "I acknowledge that AWS CloudFormation might create IAM resources."
-  3. Click "Create stack".
+     ```
 
-### 5. Verify Deployment
+### 4. Verify Deployment
 - **Description**: Confirm that resources are created successfully.
 - **Action**: Check the AWS Management Console:
   - **S3**: Verify buckets exist.
   - **Lambda**: Confirm the `ForestClassificationLambda` function is deployed.
   - **CloudFormation**: Ensure the stack status is `CREATE_COMPLETE`.
+ 
+### 5. Retrieve the Lambda Function URL
+- **Description**: Get the Lambda Function URL from the output of deployed CDK.
 
 ---
 
